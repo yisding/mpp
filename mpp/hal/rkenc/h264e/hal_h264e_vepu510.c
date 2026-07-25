@@ -347,7 +347,7 @@ static MPP_RET hal_h264e_vepu510_init(void *hal, MppEncHalCfg *cfg)
     }
 
     p->poll_slice_max = 8;
-    p->poll_cfg_size = (sizeof(p->poll_cfgs) + sizeof(RK_S32) * p->poll_slice_max);
+    p->poll_cfg_size = (sizeof(MppDevPollCfg) + sizeof(RK_S32) * p->poll_slice_max);
     p->poll_cfgs = mpp_malloc_size(MppDevPollCfg, p->poll_cfg_size * p->task_cnt);
     if (NULL == p->poll_cfgs) {
         ret = MPP_ERR_MALLOC;

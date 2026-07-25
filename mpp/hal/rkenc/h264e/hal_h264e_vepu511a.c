@@ -298,7 +298,7 @@ static MPP_RET hal_h264e_vepu511a_init(void *hal, MppEncHalCfg *cfg)
     }
 
     p->poll_slice_max = 8;
-    p->poll_cfg_size = (sizeof(p->poll_cfgs) + sizeof(RK_S32) * p->poll_slice_max);
+    p->poll_cfg_size = (sizeof(MppDevPollCfg) + sizeof(RK_S32) * p->poll_slice_max);
     p->poll_cfgs = mpp_malloc_size(MppDevPollCfg, p->poll_cfg_size);
     if (NULL == p->poll_cfgs) {
         ret = MPP_ERR_MALLOC;
@@ -2514,8 +2514,15 @@ static MPP_RET hal_h264e_vepu511a_wait(void *hal, HalEncTask *task)
         RK_U32 slice_len;
         RK_U32 slice_last = 0;
         RK_U32 empty_cnt = 0;
-        MppDevPollCfg *poll_cfg = (MppDevPollCfg *)((char *)ctx->poll_cfgs +
-                                                    task->flags.reg_idx * ctx->poll_cfg_size);
+        /*
+         * This HAL is single task: regs_set is allocated as one element and
+         * used unindexed everywhere else, and only one poll cfg is allocated.
+         * Indexing by reg_idx here was copied from the multi task vepu580 HAL
+         * and would run off the end of the allocation if reg_idx were ever
+         * non-zero.  Use the single cfg, as hal_h264e_vepu511.c does.
+         */
+        MppDevPollCfg *poll_cfg = ctx->poll_cfgs;
+
         param.task = task;
         param.base = mpp_packet_get_data(task->packet);
 
