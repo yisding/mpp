@@ -28,6 +28,8 @@
 #include "vepu5xx_common.h"
 #include "vepu511_common.h"
 
+#define HAL_ENC_SLICE_POLL_EMPTY_MAX    16
+
 #define H265E_LAMBDA_TAB_SIZE  (52 * sizeof(RK_U32))
 #define H265E_SMEAR_STR_NUM    (8)
 
@@ -2795,6 +2797,7 @@ MPP_RET hal_h265e_vepu511_wait(void *hal, HalEncTask *task)
         EncOutParam param;
         RK_U32 slice_len = 0;
         RK_U32 slice_last = 0;
+        RK_U32 empty_cnt = 0;
         MppDevPollCfg *poll_cfg = (MppDevPollCfg *)((char *)ctx->poll_cfgs);
         param.task = task;
         param.base = mpp_packet_get_data(task->packet);
@@ -2825,11 +2828,48 @@ MPP_RET hal_h265e_vepu511_wait(void *hal, HalEncTask *task)
                     mpp_callback(ctx->output_cb, &param);
                 }
             }
+
+            /*
+             * The kernel can report an error together with valid records, so
+             * consume the records first and only then fail the frame.
+             */
+            if (ret) {
+                mpp_err_f("slice poll failed %d after %d slice(s)\n",
+                          ret, poll_cfg->count_ret);
+                ret = MPP_ERR_VPUHW;
+                break;
+            }
+
+            /*
+             * A successful poll that returns nothing makes no progress.  Bound
+             * it so a driver that never delivers the last flag cannot hang.
+             */
+            if (poll_cfg->count_ret > 0) {
+                empty_cnt = 0;
+            } else if (++empty_cnt >= HAL_ENC_SLICE_POLL_EMPTY_MAX) {
+                mpp_err_f("slice poll returned no slice %d times\n", empty_cnt);
+                ret = MPP_ERR_VPUHW;
+                break;
+            }
         } while (!slice_last);
 
-        ret = hal_h265e_vepu511_status_check(regs);
-        if (!ret)
-            task->hw_length += elem->st.bs_lgth_l32;
+        if (ret) {
+            /*
+             * The poll failed, so the status registers were never updated.  Do
+             * not overwrite the error with a stale register check.  In low
+             * delay mode the output thread is waiting on a terminal segment
+             * that will now never arrive, so end the packet here.
+             */
+            if ((split_out & MPP_ENC_SPLIT_OUT_LOWDELAY) && !slice_last) {
+                param.length = 0;
+                ctx->output_cb->cmd = ENC_OUTPUT_FINISH;
+                mpp_callback(ctx->output_cb, &param);
+            }
+        } else {
+            ret = hal_h265e_vepu511_status_check(regs);
+            if (!ret)
+                task->hw_length += elem->st.bs_lgth_l32;
+        }
 
     } else {
         ret = mpp_dev_ioctl(ctx->dev, MPP_DEV_CMD_POLL, NULL);

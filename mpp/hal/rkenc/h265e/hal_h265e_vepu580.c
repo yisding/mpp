@@ -42,6 +42,8 @@
 
 #include "mpp_service.h"
 
+#define HAL_ENC_SLICE_POLL_EMPTY_MAX    16
+
 #define MAX_FRAME_TASK_NUM      2
 #define MAX_TILE_NUM            4
 #define MAX_REGS_SET            ((MAX_FRAME_TASK_NUM) * (MAX_TILE_NUM))
@@ -3217,7 +3219,9 @@ MPP_RET hal_h265e_v580_wait(void *hal, HalEncTask *task)
         EncOutParam param;
         RK_U32 slice_len = 0;
         RK_U32 slice_last = 0;
+        RK_U32 empty_cnt = 0;
         RK_U32 finish_cnt = 0;
+        RK_U32 finish_sent = 0;
         RK_U32 tile1_offset = 0;
         MppPacket pkt = enc_task->packet;
         RK_U32 offset = mpp_packet_get_length(pkt);
@@ -3265,6 +3269,7 @@ MPP_RET hal_h265e_v580_wait(void *hal, HalEncTask *task)
                     if (ctx->tile_parall_en) {
                         if (finish_cnt + 1 > ctx->tile_num) {
                             ctx->output_cb->cmd = ENC_OUTPUT_FINISH;
+                            finish_sent = 1;
                         }
                     }
                 }
@@ -3277,6 +3282,29 @@ MPP_RET hal_h265e_v580_wait(void *hal, HalEncTask *task)
                 seg_offset += slice_len;
             }
 
+            /*
+             * The kernel can report an error together with valid records, so
+             * consume the records first and only then fail the frame.
+             */
+            if (ret) {
+                mpp_err_f("slice poll failed %d after %d slice(s)\n",
+                          ret, poll_cfg->count_ret);
+                ret = MPP_ERR_VPUHW;
+                break;
+            }
+
+            /*
+             * A successful poll that returns nothing makes no progress.  Bound
+             * it so a driver that never delivers the last flag cannot hang.
+             */
+            if (poll_cfg->count_ret > 0) {
+                empty_cnt = 0;
+            } else if (++empty_cnt >= HAL_ENC_SLICE_POLL_EMPTY_MAX) {
+                mpp_err_f("slice poll returned no slice %d times\n", empty_cnt);
+                ret = MPP_ERR_VPUHW;
+                break;
+            }
+
             if (ctx->tile_parall_en) {
                 if (finish_cnt + 1 > ctx->tile_num) {
                     break;
@@ -3285,6 +3313,21 @@ MPP_RET hal_h265e_v580_wait(void *hal, HalEncTask *task)
                 break;
             }
         } while (1);
+
+        /*
+         * The poll failed mid-frame.  In low delay mode the output thread is
+         * waiting on a terminal segment that will now never arrive, so end the
+         * packet here.  Track that in a per-frame flag rather than reading back
+         * ctx->output_cb->cmd: output_cb is the encoder wide MppCbCtx and its
+         * cmd field persists across frames, so a stale ENC_OUTPUT_FINISH left
+         * by an earlier frame would suppress this callback and hang the
+         * consumer.
+         */
+        if (ret && (split_out & MPP_ENC_SPLIT_OUT_LOWDELAY) && !finish_sent) {
+            param.length = 0;
+            ctx->output_cb->cmd = ENC_OUTPUT_FINISH;
+            mpp_callback(ctx->output_cb, &param);
+        }
     } else {
         H265eV580StatusElem *elem = frm->regs_ret[0];
         H265eV580RegSet *regs = frm->regs_set[0];
