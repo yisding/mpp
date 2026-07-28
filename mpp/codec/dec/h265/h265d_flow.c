@@ -246,6 +246,11 @@ static RK_S32 h265d_slice_head(H265dPrs *p)
             p->ps_need_upate = 1;
             p->pre_pps_id = pps_id;
         }
+        /* Bit set means the selected PPS was parsed with new content. */
+        if (MPP_GET_BIT64(p->pps_update_mask, pps_id)) {
+            p->ps_need_upate = 1;
+            MPP_CLR_BIT64(p->pps_update_mask, pps_id);
+        }
     }
 
     if (!slice->first_slice_in_pic_flag &&
