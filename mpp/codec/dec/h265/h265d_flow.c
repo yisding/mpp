@@ -1102,14 +1102,10 @@ RK_S32 h265d_nal_unit(H265dPrs *p, const RK_U8 *nal, RK_S32 length)
             p->poc <= p->max_ra) {
             p->is_decoded = 0;
             break;
-        } else if (!p->ctx->cfg->base.disable_error &&
-                   (p->poc < p->max_ra) && !IS_IRAP(type)) {
-            p->is_decoded = 0;
-            break;
-        } else {
-            if (type == NAL_RASL_R && p->poc > p->max_ra)
-                p->max_ra = INT_MIN;
         }
+
+        if (type == NAL_RASL_R && p->poc > p->max_ra)
+            p->max_ra = INT_MIN;
 
         if (p->slice.first_slice_in_pic_flag) {
             ret = h265d_frame_new(p);
