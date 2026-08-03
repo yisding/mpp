@@ -319,7 +319,18 @@ void iep2_test(iep2_test_cfg *cfg)
 
         memset(pdst[0], 0, dstfrmsize);
         memset(pdst[1], 0, dstfrmsize);
+        /*
+         * The CPU has just written the source frame and both destinations, so
+         * flush those stores out before the hardware DMA-reads them, and
+         * invalidate the destinations afterwards so the readback below sees
+         * the DMA result rather than our own cached zeros.
+         */
+        mpp_buffer_sync_end(srcbuf[next]);
+        mpp_buffer_sync_end(dstbuf[0]);
+        mpp_buffer_sync_end(dstbuf[1]);
         iep2->ops->control(iep2->priv, IEP_CMD_RUN_SYNC, &dei_info);
+        mpp_buffer_sync_begin(dstbuf[0]);
+        mpp_buffer_sync_begin(dstbuf[1]);
 
         if (cfg->fp_slt) {
             crc_data_calc(checkcrc, pdst[out_order], dstfrmsize);
