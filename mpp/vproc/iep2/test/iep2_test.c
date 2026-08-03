@@ -57,7 +57,9 @@ static OptionInfo iep2_test_cmd[] = {
     {"i",   "src_file",         "input  image file name"},
     {"C",   "dst_format",       "output image format in ASCII string"},
     {"o",   "dst_file",         "output image file name"},
-    {"v",   "slt_file",         "slt verify data file"}
+    {"v",   "slt_file",         "slt verify data file"},
+    {"f",   "field_order",      "field order, TFF or BFF"},
+    {"m",   "dil_mode",         "deinterlacing mode, see enum IEP2_DIL_MODE"}
 };
 
 static void iep2_test_help()
@@ -115,6 +117,8 @@ static RK_S32 str_to_iep2_swa(const char *str)
 
     return swa;
 }
+
+static RK_S32 g_dil_mode = IEP2_DIL_MODE_I5O2;
 
 static MPP_RET check_input_cmd(iep2_test_cfg *cfg)
 {
@@ -272,7 +276,7 @@ void iep2_test(iep2_test_cfg *cfg)
        so don't try to set field order during the playback.
     */
     params.ptype = IEP2_PARAM_TYPE_MODE;
-    params.param.mode.dil_mode = IEP2_DIL_MODE_I5O2;
+    params.param.mode.dil_mode = g_dil_mode;
     params.param.mode.out_mode = IEP2_OUT_MODE_LINE;
     params.param.mode.dil_order = cfg->field_order;
 
@@ -394,7 +398,7 @@ int main(int argc, char **argv)
 
     /// get options
     opterr = 0;
-    while ((ch = getopt(argc, argv, "i:w:h:c:o:C:v:f:")) != -1) {
+    while ((ch = getopt(argc, argv, "i:w:h:c:o:C:v:f:m:")) != -1) {
         switch (ch) {
         case 'w': {
             cfg.w = atoi(optarg);
@@ -424,6 +428,10 @@ int main(int argc, char **argv)
             mpp_log("verify file: %s\n", optarg);
             strncpy(cfg.slt_url, optarg, sizeof(cfg.slt_url) - 1);
             cfg.fp_slt = fopen(cfg.slt_url, "w+b");
+        } break;
+        case 'm': {
+            g_dil_mode = atoi(optarg);
+            mpp_log("dil_mode set to %d\n", g_dil_mode);
         } break;
         case 'f': {
             if (!strcmp(optarg, "TFF"))
