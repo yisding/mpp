@@ -138,10 +138,17 @@ static void dec_vproc_put_frame(Mpp *mpp, MppFrame frame, MppBuffer buf, RK_S64 
     mpp_list_add_at_tail(list, &out, sizeof(out));
 
     mpp->mFramePutCount++;
+    /*
+     * impl->buffer is legitimately NULL for the signal frames this function
+     * also carries: the info-change and eos notifications are both put with a
+     * NULL buf. Dereferencing it here made mpp_buffer_get_ptr() log
+     * "invalid NULL input" at error level during entirely normal operation,
+     * which reads like a fault in the frame being reported.
+     */
     vproc_dbg_out("Output frame[%d]:poc %d, pts %lld, err 0x%x, dis %x, buf ptr %p\n",
                   mpp->mFramePutCount, mpp_frame_get_poc(out), mpp_frame_get_pts(out),
                   mpp_frame_get_errinfo(frame), mpp_frame_get_discard(frame),
-                  mpp_buffer_get_ptr(impl->buffer));
+                  impl->buffer ? mpp_buffer_get_ptr(impl->buffer) : NULL);
     mpp_mutex_cond_signal(&list->cond_lock);
     mpp_mutex_cond_unlock(&list->cond_lock);
 
