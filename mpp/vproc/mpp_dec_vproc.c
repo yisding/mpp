@@ -681,7 +681,16 @@ static MPP_RET dec_vproc_dei_v2_deinterlace(MppDecVprocCtxImpl *ctx, MppFrame fr
     } else {
         // 2 in 1 out case
         vproc_dbg_status("2 field in and 1 frame out\n");
-        dil_mode = IEP2_DIL_MODE_I1O1T;
+        /*
+         * The T/B suffix, not dil_order, selects which field this mode emits.
+         * Measured on RK3588: with the same input, I1O1T and I1O1B produce
+         * different output, while flipping dil_order between TFF and BFF
+         * leaves the output byte-identical. So a hardcoded I1O1T emits the top
+         * field even for bottom-field-first content, where the bottom field is
+         * the temporally first one, and setting dil_order does not compensate.
+         */
+        dil_mode = (mode & MPP_FRAME_FLAG_BOT_FIRST) && !(mode & MPP_FRAME_FLAG_TOP_FIRST) ?
+                   IEP2_DIL_MODE_I1O1B : IEP2_DIL_MODE_I1O1T;
 
         dec_vproc_config_dei_v2(ctx, frm, dil_mode);
 
@@ -757,7 +766,16 @@ static MPP_RET dec_vproc_dei_v2_detection(MppDecVprocCtxImpl *ctx, MppFrame frm)
     } else {
         // 2 in 1 out case
         vproc_dbg_status("2 field in and 1 frame out\n");
-        dil_mode = IEP2_DIL_MODE_I1O1T;
+        /*
+         * The T/B suffix, not dil_order, selects which field this mode emits.
+         * Measured on RK3588: with the same input, I1O1T and I1O1B produce
+         * different output, while flipping dil_order between TFF and BFF
+         * leaves the output byte-identical. So a hardcoded I1O1T emits the top
+         * field even for bottom-field-first content, where the bottom field is
+         * the temporally first one, and setting dil_order does not compensate.
+         */
+        dil_mode = (mode & MPP_FRAME_FLAG_BOT_FIRST) && !(mode & MPP_FRAME_FLAG_TOP_FIRST) ?
+                   IEP2_DIL_MODE_I1O1B : IEP2_DIL_MODE_I1O1T;
 
         dec_vproc_config_dei_v2(ctx, frm, dil_mode);
 
