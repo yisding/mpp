@@ -184,12 +184,21 @@ static RK_U32 reset_parser_thread(Mpp *mpp, DecTask *task)
 
         dec_release_input_packet(dec, 1);
 
-        while (MPP_OK == mpp_buf_slot_dequeue(frame_slots, &index, QUEUE_DISPLAY)) {
+        while (1) {
             /* release extra ref in slot's MppBuffer */
             MppBuffer buffer = NULL;
-            mpp_buf_slot_get_prop(frame_slots, index, SLOT_BUFFER, &buffer);
-            if (buffer)
-                mpp_buffer_put(buffer);
+            MppFrame frame = NULL;
+
+            if (mpp_buf_slot_dequeue_frame(frame_slots, &index, &frame,
+                                           QUEUE_DISPLAY))
+                break;
+            if (frame)
+                mpp_frame_deinit(&frame);
+            else {
+                mpp_buf_slot_get_prop(frame_slots, index, SLOT_BUFFER, &buffer);
+                if (buffer)
+                    mpp_buffer_put(buffer);
+            }
             mpp_buf_slot_clr_flag(frame_slots, index, SLOT_QUEUE_USE);
         }
 
@@ -249,14 +258,17 @@ static void reset_hal_thread(Mpp *mpp)
     HalDecTaskFlag flag;
     RK_S32 index = -1;
     HalTaskHnd  task = NULL;
+    MppFrame frame = NULL;
 
     /* when hal thread reset output all frames */
     flag.val = 0;
     mpp_dec_flush(dec);
 
     mpp_thread_lock(dec->thread_hal, THREAD_OUTPUT);
-    while (MPP_OK == mpp_buf_slot_dequeue(frame_slots, &index, QUEUE_DISPLAY)) {
-        mpp_dec_put_frame(mpp, index, flag);
+    while (MPP_OK == mpp_buf_slot_dequeue_frame(frame_slots, &index, &frame,
+                                                QUEUE_DISPLAY)) {
+        mpp_dec_put_frame(mpp, index, flag, frame);
+        frame = NULL;
         mpp_buf_slot_clr_flag(frame_slots, index, SLOT_QUEUE_USE);
     }
 
@@ -518,6 +530,7 @@ static MPP_RET try_proc_dec_task(Mpp *mpp, DecTask *task)
         if (task_dec->flags.eos) {
             mpp_dec_put_task(mpp, task);
         } else {
+            mpp_dec_push_display(mpp, task_dec->flags);
             hal_task_hnd_set_status(task->hnd, TASK_IDLE);
             task->hnd = NULL;
         }
@@ -825,7 +838,7 @@ void *mpp_dec_hal_thread(void *data)
             if (task_dec->flags.info_change) {
                 mpp_dec_flush(dec);
                 mpp_dec_push_display(mpp, task_dec->flags);
-                mpp_dec_put_frame(mpp, task_dec->output, task_dec->flags);
+                mpp_dec_put_frame(mpp, task_dec->output, task_dec->flags, NULL);
 
                 hal_task_hnd_set_status(task, TASK_IDLE);
                 task = NULL;
@@ -851,7 +864,7 @@ void *mpp_dec_hal_thread(void *data)
                  * only but this task may go through vproc process also. We need
                  * create a buffer slot index for it.
                  */
-                mpp_dec_put_frame(mpp, -1, task_dec->flags);
+                mpp_dec_put_frame(mpp, -1, task_dec->flags, NULL);
 
                 hal_task_hnd_set_status(task, TASK_IDLE);
                 task = NULL;

@@ -221,7 +221,14 @@ typedef enum SlotQueueType_e {
 } SlotQueueType;
 
 MPP_RET mpp_buf_slot_enqueue(MppBufSlots slots, RK_S32  index, SlotQueueType type);
+/*
+ * Queue one distinct display event with a snapshot of its frame metadata.
+ * The returned frame from dequeue_frame owns its buffer reference.
+ */
+MPP_RET mpp_buf_slot_enqueue_frame(MppBufSlots slots, RK_S32 index, MppFrame frame);
 MPP_RET mpp_buf_slot_dequeue(MppBufSlots slots, RK_S32 *index, SlotQueueType type);
+MPP_RET mpp_buf_slot_dequeue_frame(MppBufSlots slots, RK_S32 *index,
+                                   MppFrame *frame, SlotQueueType type);
 
 typedef enum SlotPropType_e {
     SLOT_EOS,

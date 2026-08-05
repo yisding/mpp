@@ -1226,8 +1226,9 @@ static MPP_RET decode_parser_header(Vp9DecCtx *ctx,
         mpp_buf_slot_get_prop(s->slots, s->refs[ref].slot_index, SLOT_FRAME_PTR, &frame);
         mpp_frame_set_pts(frame, s->pts);
         mpp_frame_set_dts(frame, s->dts);
-        mpp_buf_slot_set_flag(s->slots, s->refs[ref].slot_index, SLOT_QUEUE_USE);
-        mpp_buf_slot_enqueue(s->slots, s->refs[ref].slot_index, QUEUE_DISPLAY);
+        ret = mpp_buf_slot_enqueue_frame(s->slots, s->refs[ref].slot_index, frame);
+        if (ret)
+            return ret;
         s->refs[ref].ref->is_output = 1;
         vp9d_dbg(VP9D_DBG_HEADER, "out repeat num %d", s->outframe_num++);
 

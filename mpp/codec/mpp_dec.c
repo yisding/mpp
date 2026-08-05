@@ -253,11 +253,12 @@ RET:
 }
 
 /* Overall mpp_dec output frame function */
-void mpp_dec_put_frame(Mpp *mpp, RK_S32 index, HalDecTaskFlag flags)
+void mpp_dec_put_frame(Mpp *mpp, RK_S32 index, HalDecTaskFlag flags,
+                       MppFrame queued_frame)
 {
     MppDecImpl *dec = (MppDecImpl *)mpp->mDec;
     MppBufSlots slots = dec->frame_slots;
-    MppFrame frame = NULL;
+    MppFrame frame = queued_frame;
     RK_U32 eos = flags.eos;
     RK_U32 change = flags.info_change;
     RK_U32 error = flags.parse_err || flags.ref_err;
@@ -267,7 +268,8 @@ void mpp_dec_put_frame(Mpp *mpp, RK_S32 index, HalDecTaskFlag flags)
     if (index >= 0) {
         RK_U32 mode = 0;
 
-        mpp_buf_slot_get_prop(slots, index, SLOT_FRAME_PTR, &frame);
+        if (!frame)
+            mpp_buf_slot_get_prop(slots, index, SLOT_FRAME_PTR, &frame);
 
         mode = mpp_frame_get_mode(frame);
         if (mode && dec->enable_deinterlace && NULL == dec->vproc) {
@@ -381,7 +383,7 @@ void mpp_dec_put_frame(Mpp *mpp, RK_S32 index, HalDecTaskFlag flags)
                    (NULL == mpp_frame_get_buffer(frame)) ? (-1) :
                    mpp_buffer_get_fd(mpp_frame_get_buffer(frame)));
 
-    if (dec->vproc) {
+    if (dec->vproc && !queued_frame) {
         HalTaskGroup group = dec->vproc_tasks;
         HalTaskHnd hnd = NULL;
         HalTaskInfo task;
@@ -421,10 +423,12 @@ void mpp_dec_put_frame(Mpp *mpp, RK_S32 index, HalDecTaskFlag flags)
     } else {
         // direct output -> copy a new MppFrame and output
         MppList *list = mpp->mFrmOut;
-        MppFrame out = NULL;
+        MppFrame out = queued_frame;
 
-        mpp_frame_init(&out);
-        mpp_frame_copy(out, frame);
+        if (!out) {
+            mpp_frame_init(&out);
+            mpp_frame_copy(out, frame);
+        }
 
         sys_dbg_pts("output frame pts %lld\n", mpp_frame_get_pts(out));
 
@@ -445,6 +449,7 @@ RK_S32 mpp_dec_push_display(Mpp *mpp, HalDecTaskFlag flags)
 {
     RK_S32 index = -1;
     MppDecImpl *dec = (MppDecImpl *)mpp->mDec;
+    MppFrame frame = NULL;
     MppBufSlots frame_slots = dec->frame_slots;
     RK_U32 eos = flags.eos;
     HalDecTaskFlag tmp = flags;
@@ -464,12 +469,14 @@ RK_S32 mpp_dec_push_display(Mpp *mpp, HalDecTaskFlag flags)
     if (dec->thread_hal)
         mpp_thread_lock(dec->thread_hal, THREAD_OUTPUT);
 
-    while (MPP_OK == mpp_buf_slot_dequeue(frame_slots, &index, QUEUE_DISPLAY)) {
+    while (MPP_OK == mpp_buf_slot_dequeue_frame(frame_slots, &index, &frame,
+                                                QUEUE_DISPLAY)) {
         /* deal with current frame */
         if (eos && mpp_slots_is_empty(frame_slots, QUEUE_DISPLAY))
             tmp.eos = 1;
 
-        mpp_dec_put_frame(mpp, index, tmp);
+        mpp_dec_put_frame(mpp, index, tmp, frame);
+        frame = NULL;
         mpp_buf_slot_clr_flag(frame_slots, index, SLOT_QUEUE_USE);
         ret++;
     }

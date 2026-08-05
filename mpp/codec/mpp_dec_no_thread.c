@@ -82,7 +82,7 @@ MPP_RET mpp_dec_decode(MppDec ctx, MppPacket packet)
             * only but this task may go through vproc process also. We need
             * create a buffer slot index for it.
             */
-            mpp_dec_put_frame(mpp, -1, task_dec->flags);
+            mpp_dec_put_frame(mpp, -1, task_dec->flags, NULL);
             output++;
         }
         mpp_mutex_cond_unlock(cmd_lock);
@@ -190,7 +190,8 @@ MPP_RET mpp_dec_decode(MppDec ctx, MppPacket packet)
         if (task_dec->flags.eos) {
             mpp_dec_flush(dec);
             output += mpp_dec_push_display(mpp, task_dec->flags);
-        }
+        } else
+            output += mpp_dec_push_display(mpp, task_dec->flags);
 
         if (status->dec_pkt_copy_rdy) {
             mpp_buf_slot_clr_flag(packet_slots, task_dec->input,  SLOT_HAL_INPUT);
@@ -220,7 +221,7 @@ MPP_RET mpp_dec_decode(MppDec ctx, MppPacket packet)
             task_dec->flags.eos = 0;
             mpp_dec_flush(dec);
             output += mpp_dec_push_display(mpp, task_dec->flags);
-            mpp_dec_put_frame(mpp, task_dec->output, task_dec->flags);
+            mpp_dec_put_frame(mpp, task_dec->output, task_dec->flags, NULL);
             output++;
             task_dec->flags.eos = eos;
             status->info_task_gen_rdy = 1;
@@ -384,13 +385,21 @@ MPP_RET mpp_dec_reset_no_thread(MppDecImpl *dec)
         task->status.task_parsed_rdy = 0;
     }
 
-    while (MPP_OK == mpp_buf_slot_dequeue(frame_slots, &index, QUEUE_DISPLAY)) {
+    while (1) {
         /* release extra ref in slot's MppBuffer */
         MppBuffer buffer = NULL;
+        MppFrame frame = NULL;
 
-        mpp_buf_slot_get_prop(frame_slots, index, SLOT_BUFFER, &buffer);
-        if (buffer)
-            mpp_buffer_put(buffer);
+        if (mpp_buf_slot_dequeue_frame(frame_slots, &index, &frame,
+                                       QUEUE_DISPLAY))
+            break;
+        if (frame)
+            mpp_frame_deinit(&frame);
+        else {
+            mpp_buf_slot_get_prop(frame_slots, index, SLOT_BUFFER, &buffer);
+            if (buffer)
+                mpp_buffer_put(buffer);
+        }
         mpp_buf_slot_clr_flag(frame_slots, index, SLOT_QUEUE_USE);
     }
 
